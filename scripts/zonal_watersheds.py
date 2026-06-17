@@ -20,7 +20,7 @@ from rasterio.transform import from_bounds
 from config_utils import DEFAULT_CONFIG, cfg_get, load_config
 
 
-VALID_REDUCERS = {"min", "mean", "max"}
+VALID_AGGREGATION_METHODS = {"min", "mean", "max"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -63,10 +63,10 @@ def infer_workers(cli_workers: int | None, workers_default: int) -> int:
     return workers_default
 
 
-def discover_year_file(data_root: Path, family: str, year: int, file_template: str) -> Path:
-    candidate = data_root / family / file_template.format(family=family, year=year)
+def discover_year_file(data_root: Path, variable: str, year: int, file_template: str) -> Path:
+    candidate = data_root / variable / file_template.format(variable=variable, year=year)
     if not candidate.exists():
-        raise FileNotFoundError(f"Missing file for {family} {year}: {candidate}")
+        raise FileNotFoundError(f"Missing file for {variable} {year}: {candidate}")
     return candidate
 
 
@@ -136,6 +136,11 @@ def build_cell_lookup(
     gdf = gdf[[id_field, "geometry"]].copy()
     gdf[id_field] = gdf[id_field].astype(int)
 
+    # rasterize() paints shapes in order and the last one drawn wins each pixel; sorting
+    # largest-first ensures small polygons fully covered by a larger neighbor still claim
+    # their own touched cells instead of being overwritten and dropped entirely.
+    gdf = gdf.loc[gdf.geometry.area.sort_values(ascending=False).index]
+
     transform, out_shape = make_transform_and_shape(template_da, x_dim, y_dim)
     shapes = ((geom, int(poly_id)) for geom, poly_id in zip(gdf.geometry, gdf[id_field]))
 
@@ -178,11 +183,11 @@ def per_year_stats(
     metric_results: Dict[str, np.ndarray] = {}
 
     for vcfg in variables_cfg:
-        family = str(vcfg["family"])
-        reducer = str(vcfg["reducer"])
+        variable = str(vcfg["variable"])
+        aggregation_method = str(vcfg["aggregation_method"])
         out_name = str(vcfg["output"])
 
-        path = discover_year_file(data_root, family, year, file_template)
+        path = discover_year_file(data_root, variable, year, file_template)
         with xr.open_dataset(path, chunks={"time": time_chunk}) as ds:
             var = first_data_var(ds)
             da = ds[var]
@@ -193,7 +198,7 @@ def per_year_stats(
             if times_ref is None:
                 times_ref = pd.DatetimeIndex(times)
             elif len(times) != len(times_ref) or not np.array_equal(times.values, times_ref.values):
-                raise ValueError(f"Time coordinate mismatch in year {year} for {family}")
+                raise ValueError(f"Time coordinate mismatch in year {year} for {variable}")
 
             n_time = len(times)
             out = np.full((n_time, n_ids), np.nan, dtype=np.float64)
@@ -207,22 +212,22 @@ def per_year_stats(
                 idx = id_index[finite]
                 vals = values[finite]
 
-                if reducer == "mean":
+                if aggregation_method == "mean":
                     sums = np.bincount(idx, weights=vals, minlength=n_ids)
                     counts = np.bincount(idx, minlength=n_ids)
                     with np.errstate(divide="ignore", invalid="ignore"):
                         day = sums / counts
                     day[counts == 0] = np.nan
-                elif reducer == "min":
+                elif aggregation_method == "min":
                     day = np.full(n_ids, np.inf, dtype=np.float64)
                     np.minimum.at(day, idx, vals)
                     day[np.isinf(day)] = np.nan
-                elif reducer == "max":
+                elif aggregation_method == "max":
                     day = np.full(n_ids, -np.inf, dtype=np.float64)
                     np.maximum.at(day, idx, vals)
                     day[np.isneginf(day)] = np.nan
                 else:
-                    raise ValueError(f"Unsupported reducer: {reducer}")
+                    raise ValueError(f"Unsupported aggregation method: {aggregation_method}")
 
                 out[ti, :] = day
 
@@ -350,11 +355,14 @@ def main() -> int:
         raise ValueError("Config must contain at least one variable definition")
 
     for v in variables_cfg:
-        for key in ("family", "reducer", "output"):
+        for key in ("variable", "aggregation_method", "output"):
             if key not in v:
                 raise ValueError(f"Variable definition missing key '{key}': {v}")
-        if str(v["reducer"]) not in VALID_REDUCERS:
-            raise ValueError(f"Unsupported reducer {v['reducer']}; expected one of {sorted(VALID_REDUCERS)}")
+        if str(v["aggregation_method"]) not in VALID_AGGREGATION_METHODS:
+            raise ValueError(
+                f"Unsupported aggregation method {v['aggregation_method']}; "
+                f"expected one of {sorted(VALID_AGGREGATION_METHODS)}"
+            )
 
     file_template = str(cfg_get(cfg, "naming.file_template"))
     if not file_template:
@@ -363,7 +371,7 @@ def main() -> int:
     os.environ.setdefault("OMP_NUM_THREADS", str(workers))
     os.environ.setdefault("MKL_NUM_THREADS", str(workers))
 
-    sample = discover_year_file(data_root, str(variables_cfg[0]["family"]), start_year, file_template)
+    sample = discover_year_file(data_root, str(variables_cfg[0]["variable"]), start_year, file_template)
     with xr.open_dataset(sample) as ds:
         var = first_data_var(ds)
         da = ds[var]

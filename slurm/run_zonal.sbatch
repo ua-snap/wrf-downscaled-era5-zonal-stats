@@ -23,8 +23,8 @@ if ! command -v micromamba >/dev/null 2>&1; then
   exit 1
 fi
 
-# shellcheck disable=SC1091
-source "$(micromamba shell hook --shell bash)"
+# shellcheck disable=SC1090
+eval "$(micromamba shell hook --shell bash)"
 micromamba activate "$ENV_NAME"
 
 python scripts/check_inputs.py \

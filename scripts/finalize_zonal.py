@@ -8,6 +8,10 @@ import json
 from pathlib import Path
 from typing import List
 
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import pandas as pd
 
 from config_utils import DEFAULT_CONFIG, cfg_get, load_config
@@ -55,6 +59,30 @@ def finalize_output(yearly_paths: List[Path], out_path: Path, out_format: str, i
         all_df.to_parquet(out_path, index=False)
     else:
         all_df.to_csv(out_path, index=False)
+
+
+def build_qc_histograms(
+    df_path: Path,
+    out_format: str,
+    png_path: Path,
+    metric_cols: List[str],
+) -> None:
+    if out_format == "parquet":
+        df = pd.read_parquet(df_path)
+    else:
+        df = pd.read_csv(df_path)
+
+    fig, axes = plt.subplots(1, len(metric_cols), figsize=(5 * len(metric_cols), 4), squeeze=False)
+    for ax, col in zip(axes[0], metric_cols):
+        ax.hist(df[col].dropna(), bins=50)
+        ax.set_title(col)
+        ax.set_xlabel(col)
+        ax.set_ylabel("count")
+    fig.tight_layout()
+
+    png_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(png_path)
+    plt.close(fig)
 
 
 def build_qc_summary(
@@ -125,6 +153,15 @@ def main() -> int:
     paths = expected_year_paths(yearly_dir, start_year, end_year, out_format)
     finalize_output(paths, out_path, out_format, id_field=id_field)
     print(f"Final output: {out_path}")
+
+    png_path = out_path.with_suffix(".png")
+    build_qc_histograms(
+        df_path=out_path,
+        out_format=out_format,
+        png_path=png_path,
+        metric_cols=["cell_count"] + metric_cols,
+    )
+    print(f"QC histograms: {png_path}")
 
     build_qc_summary(
         df_path=out_path,

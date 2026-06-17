@@ -41,10 +41,10 @@ def expected_years(start_year: int, end_year: int) -> List[int]:
     return list(range(start_year, end_year + 1))
 
 
-def discover_family_files(root: Path, family: str, file_template: str, years: List[int]) -> Dict[int, Path]:
+def discover_variable_files(root: Path, variable: str, file_template: str, years: List[int]) -> Dict[int, Path]:
     year_to_path: Dict[int, Path] = {}
     for year in years:
-        path = root / family / file_template.format(family=family, year=year)
+        path = root / variable / file_template.format(variable=variable, year=year)
         if path.exists():
             year_to_path[year] = path
     return year_to_path
@@ -77,7 +77,7 @@ def infer_spatial_dims(ds: xr.Dataset, data_var: str) -> Tuple[str, str]:
 
 def validate_files(
     root: Path,
-    families: List[str],
+    variable_names: List[str],
     file_template: str,
     start_year: int,
     end_year: int,
@@ -85,17 +85,17 @@ def validate_files(
     years = expected_years(start_year, end_year)
     summaries: Dict[str, Dict[str, Iterable[int]]] = {}
 
-    for family in families:
-        mapping = discover_family_files(root, family, file_template, years)
+    for variable in variable_names:
+        mapping = discover_variable_files(root, variable, file_template, years)
         available = sorted(mapping.keys())
         missing = [y for y in years if y not in mapping]
-        summaries[family] = {
+        summaries[variable] = {
             "available_years": available,
             "missing_years": missing,
             "count": len(available),
         }
         if missing:
-            raise ValueError(f"{family} missing years: {missing}")
+            raise ValueError(f"{variable} missing years: {missing}")
     return summaries
 
 
@@ -112,8 +112,8 @@ def main() -> int:
     file_template = str(cfg_get(cfg, "naming.file_template"))
 
     variables_cfg = cfg.get("variables", [])
-    families = [str(v["family"]) for v in variables_cfg]
-    if not families:
+    variable_names = [str(v["variable"]) for v in variables_cfg]
+    if not variable_names:
         raise ValueError("Config must contain at least one variable definition")
 
     summary_path = Path(summary_out)
@@ -124,7 +124,7 @@ def main() -> int:
         raise FileNotFoundError(f"Shapefile not found: {shp_path}")
 
     root = Path(data_root)
-    file_summary = validate_files(root, families, file_template, start_year, end_year)
+    file_summary = validate_files(root, variable_names, file_template, start_year, end_year)
 
     gdf = gpd.read_file(shp_path)
     if id_field not in gdf.columns:
@@ -137,8 +137,8 @@ def main() -> int:
         dupes = id_series[id_series.duplicated()].unique()[:10]
         raise ValueError(f"ID field {id_field} has duplicates (examples): {dupes}")
 
-    sample_family = families[0]
-    sample_path = root / sample_family / file_template.format(family=sample_family, year=start_year)
+    sample_variable = variable_names[0]
+    sample_path = root / sample_variable / file_template.format(variable=sample_variable, year=start_year)
     with xr.open_dataset(sample_path) as ds:
         data_var = first_data_var(ds)
         x_dim, y_dim = infer_spatial_dims(ds, data_var)
@@ -153,7 +153,7 @@ def main() -> int:
         "catchment_count": int(len(gdf)),
         "shapefile_crs": str(gdf.crs),
         "file_template": file_template,
-        "families": families,
+        "variables": variable_names,
         "years": {"start": start_year, "end": end_year},
         "file_summary": file_summary,
         "sample_dataset": str(sample_path),

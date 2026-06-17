@@ -6,37 +6,37 @@
   },
   "years": {
     "start": 2000,
-    "end": 2024
+    "end": 2023
   },
   "variables": [
     {
-      "family": "t2_min",
-      "reducer": "min",
+      "variable": "t2_min",
+      "aggregation_method": "min",
       "output": "t2_min_zonal_min"
     },
     {
-      "family": "t2_mean",
-      "reducer": "mean",
+      "variable": "t2_mean",
+      "aggregation_method": "mean",
       "output": "t2_mean_zonal_mean"
     },
     {
-      "family": "t2_max",
-      "reducer": "max",
+      "variable": "t2_max",
+      "aggregation_method": "max",
       "output": "t2_max_zonal_max"
     }
   ],
   "naming": {
-    "file_template": "{family}_{year}_daily_era5_4km_3338.nc"
+    "file_template": "{variable}_{year}_daily_era5_4km_3338.nc"
   },
   "spatial": {
     "target_crs": "EPSG:3338",
-    "cell_membership": "center"
+    "cell_membership": "all_touched"
   },
   "outputs": {
     "preflight_summary": "/import/home/jdpaul3/wrf-downscaled-era5-zonal-stats/outputs/preflight_summary.json",
     "yearly_dir": "/import/home/jdpaul3/wrf-downscaled-era5-zonal-stats/outputs/zonal_t2_daily",
-    "final_path": "/import/home/jdpaul3/wrf-downscaled-era5-zonal-stats/outputs/zonal_t2_daily_2000_2024.parquet",
-    "format": "parquet",
+    "final_path": "/import/home/jdpaul3/wrf-downscaled-era5-zonal-stats/outputs/zonal_t2_daily_2000_2023.csv",
+    "format": "csv",
     "qc_path": "/import/home/jdpaul3/wrf-downscaled-era5-zonal-stats/outputs/qc_summary.json"
   },
   "performance": {
