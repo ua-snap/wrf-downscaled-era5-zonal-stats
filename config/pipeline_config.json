@@ -1,0 +1,46 @@
+{
+  "io": {
+    "shapefile": "/import/home/jdpaul3/wrf-downscaled-era5-zonal-stats/shp/merit_watersheds/cats_15Jun26.shp",
+    "id_field": "COMID",
+    "data_root": "/beegfs/CMIP6/jdpaul3/shaftel_data"
+  },
+  "years": {
+    "start": 2000,
+    "end": 2024
+  },
+  "variables": [
+    {
+      "family": "t2_min",
+      "reducer": "min",
+      "output": "t2_min_zonal_min"
+    },
+    {
+      "family": "t2_mean",
+      "reducer": "mean",
+      "output": "t2_mean_zonal_mean"
+    },
+    {
+      "family": "t2_max",
+      "reducer": "max",
+      "output": "t2_max_zonal_max"
+    }
+  ],
+  "naming": {
+    "file_template": "{family}_{year}_daily_era5_4km_3338.nc"
+  },
+  "spatial": {
+    "target_crs": "EPSG:3338",
+    "cell_membership": "center"
+  },
+  "outputs": {
+    "preflight_summary": "/import/home/jdpaul3/wrf-downscaled-era5-zonal-stats/outputs/preflight_summary.json",
+    "yearly_dir": "/import/home/jdpaul3/wrf-downscaled-era5-zonal-stats/outputs/zonal_t2_daily",
+    "final_path": "/import/home/jdpaul3/wrf-downscaled-era5-zonal-stats/outputs/zonal_t2_daily_2000_2024.parquet",
+    "format": "parquet",
+    "qc_path": "/import/home/jdpaul3/wrf-downscaled-era5-zonal-stats/outputs/qc_summary.json"
+  },
+  "performance": {
+    "time_chunk": 31,
+    "workers_default": 8
+  }
+}
