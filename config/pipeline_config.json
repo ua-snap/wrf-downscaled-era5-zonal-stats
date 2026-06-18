@@ -10,9 +10,9 @@
   },
   "variables": [
     {
-      "variable": "t2_min",
+      "variable": "t2_mean",
       "aggregation_method": "min",
-      "output": "t2_min_zonal_min"
+      "output": "t2_mean_zonal_min"
     },
     {
       "variable": "t2_mean",
@@ -20,9 +20,9 @@
       "output": "t2_mean_zonal_mean"
     },
     {
-      "variable": "t2_max",
+      "variable": "t2_mean",
       "aggregation_method": "max",
-      "output": "t2_max_zonal_max"
+      "output": "t2_mean_zonal_max"
     }
   ],
   "naming": {
@@ -30,7 +30,7 @@
   },
   "spatial": {
     "target_crs": "EPSG:3338",
-    "cell_membership": "all_touched"
+    "engine": "exactextract"
   },
   "outputs": {
     "preflight_summary": "/import/home/jdpaul3/wrf-downscaled-era5-zonal-stats/outputs/preflight_summary.json",

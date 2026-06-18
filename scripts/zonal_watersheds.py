@@ -18,9 +18,11 @@ from rasterio.features import rasterize
 from rasterio.transform import from_bounds
 
 from config_utils import DEFAULT_CONFIG, cfg_get, load_config
+from exactextract_zonal import load_polygons, per_year_stats_exactextract
 
 
 VALID_AGGREGATION_METHODS = {"min", "mean", "max"}
+VALID_ENGINES = {"rasterize", "exactextract"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,9 +47,15 @@ def parse_args() -> argparse.Namespace:
         "--cell-membership",
         choices=["all_touched", "center"],
         default=None,
-        help="Cell inclusion rule for polygon rasterization",
+        help="Cell inclusion rule for polygon rasterization (rasterize engine only)",
     )
     parser.add_argument("--target-crs", default=None, help="Target CRS override, e.g. EPSG:3338")
+    parser.add_argument(
+        "--engine",
+        choices=sorted(VALID_ENGINES),
+        default=None,
+        help="Zonal stats engine: 'rasterize' (default) or 'exactextract'",
+    )
 
     parser.add_argument("--skip-finalize", action="store_true")
     parser.add_argument("--skip-qc", action="store_true")
@@ -350,6 +358,16 @@ def main() -> int:
     cell_membership = str(args.cell_membership or cfg_get(cfg, "spatial.cell_membership", "all_touched"))
     target_crs = str(args.target_crs or cfg_get(cfg, "spatial.target_crs", "EPSG:3338"))
 
+    engine = str(args.engine or cfg_get(cfg, "spatial.engine", "rasterize"))
+    if engine not in VALID_ENGINES:
+        raise ValueError(f"Unsupported engine {engine}; expected one of {sorted(VALID_ENGINES)}")
+    if engine == "exactextract" and (args.cell_membership or cfg_get(cfg, "spatial.cell_membership")):
+        print(
+            "Note: spatial.cell_membership / --cell-membership is ignored by the "
+            "exactextract engine; coverage-fraction weighting supersedes the "
+            "binary all_touched/center distinction. See README.md."
+        )
+
     variables_cfg = cfg.get("variables", [])
     if not variables_cfg:
         raise ValueError("Config must contain at least one variable definition")
@@ -371,41 +389,63 @@ def main() -> int:
     os.environ.setdefault("OMP_NUM_THREADS", str(workers))
     os.environ.setdefault("MKL_NUM_THREADS", str(workers))
 
-    sample = discover_year_file(data_root, str(variables_cfg[0]["variable"]), start_year, file_template)
-    with xr.open_dataset(sample) as ds:
-        var = first_data_var(ds)
-        da = ds[var]
-        x_dim, y_dim = infer_spatial_dims(da)
-        flat_ids, valid_ids, cell_counts = build_cell_lookup(
-            shapefile=shapefile,
-            id_field=id_field,
-            template_da=da,
-            x_dim=x_dim,
-            y_dim=y_dim,
-            all_touched=(cell_membership == "all_touched"),
-            target_crs=target_crs,
-        )
-
-    if len(valid_ids) == 0:
-        raise ValueError("No rasterized polygon cells were found")
-
     year_paths: List[Path] = []
-    for year in range(start_year, end_year + 1):
-        print(f"Processing year {year}...")
-        year_df = per_year_stats(
-            year=year,
-            data_root=data_root,
-            variables_cfg=variables_cfg,
-            file_template=file_template,
-            flat_ids=flat_ids,
-            valid_ids=valid_ids,
-            cell_counts=cell_counts,
-            time_chunk=time_chunk,
-            id_field=id_field,
-        )
-        ypath = write_year_output(year_df, yearly_dir, year, out_format)
-        year_paths.append(ypath)
-        print(f"Wrote {ypath} ({len(year_df)} rows)")
+
+    if engine == "rasterize":
+        sample = discover_year_file(data_root, str(variables_cfg[0]["variable"]), start_year, file_template)
+        with xr.open_dataset(sample) as ds:
+            var = first_data_var(ds)
+            da = ds[var]
+            x_dim, y_dim = infer_spatial_dims(da)
+            flat_ids, valid_ids, cell_counts = build_cell_lookup(
+                shapefile=shapefile,
+                id_field=id_field,
+                template_da=da,
+                x_dim=x_dim,
+                y_dim=y_dim,
+                all_touched=(cell_membership == "all_touched"),
+                target_crs=target_crs,
+            )
+
+        if len(valid_ids) == 0:
+            raise ValueError("No rasterized polygon cells were found")
+
+        for year in range(start_year, end_year + 1):
+            print(f"Processing year {year}...")
+            year_df = per_year_stats(
+                year=year,
+                data_root=data_root,
+                variables_cfg=variables_cfg,
+                file_template=file_template,
+                flat_ids=flat_ids,
+                valid_ids=valid_ids,
+                cell_counts=cell_counts,
+                time_chunk=time_chunk,
+                id_field=id_field,
+            )
+            ypath = write_year_output(year_df, yearly_dir, year, out_format)
+            year_paths.append(ypath)
+            print(f"Wrote {ypath} ({len(year_df)} rows)")
+
+    elif engine == "exactextract":
+        gdf = load_polygons(shapefile, id_field, target_crs)
+
+        for year in range(start_year, end_year + 1):
+            print(f"Processing year {year}...")
+            year_df = per_year_stats_exactextract(
+                year=year,
+                data_root=data_root,
+                variables_cfg=variables_cfg,
+                file_template=file_template,
+                gdf=gdf,
+                id_field=id_field,
+                target_crs=target_crs,
+                discover_year_file_fn=discover_year_file,
+                first_data_var_fn=first_data_var,
+            )
+            ypath = write_year_output(year_df, yearly_dir, year, out_format)
+            year_paths.append(ypath)
+            print(f"Wrote {ypath} ({len(year_df)} rows)")
 
     if args.skip_finalize:
         print("Skipping finalize step; yearly outputs are complete.")
