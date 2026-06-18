@@ -17,3 +17,4 @@ dependencies:
   - pandas>=2.2
   - pyarrow>=15
   - matplotlib>=3.8
+  - exactextract>=0.3
